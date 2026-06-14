@@ -784,8 +784,7 @@ function buildDivisionTable(datos,id,title,yr){
   // Grand total
   tableHtml+='<tr class="total-row"><td>GRAN TOTAL</td>';
   mesesPresent.forEach(m=>tableHtml+='<td>'+fmtP(colTotals[m])+'</td>');
-  const gtUnits=new Set();curMonthData.filter(r=>r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>gtUnits.add(r.eco));
-  tableHtml+='<td>'+fmtP(gt)+'</td><td>'+gtUnits.size+'</td></tr>';
+  tableHtml+='<td>'+fmtP(gt)+'</td></tr>';
   tableHtml+='</tbody></table></div></div>';
   return tableHtml;
 }
@@ -1264,7 +1263,7 @@ function buildFleet4Table(datos,allDatos,id,title){
   // Get current month unit counts
   const curP=getCurrentPeriod();
   const curMonthData=allDatos.filter(r=>r.anio===curP.anio&&r.mes===curP.mes);
-  const headers=['CHASIS / CARROCERÍA',...mesesPresent.map(m=>MESES[m-1]),'TOTAL','UNIADES MES'];
+  const headers=['CHASIS / CARROCERÍA',...mesesPresent.map(m=>MESES[m-1]),'TOTAL','UNIDADES MES'];
   const colTotals={};mesesPresent.forEach(m=>colTotals[m]=0);let gt=0;
   let tableHtml='<div class="tabla-wrap"><div class="tabla-toolbar"><span>'+title+'</span><button class="btn-dl" onclick="downloadTable(this.dataset.tid)" data-tid=""+ id +"">⬇ DESCARGA EXCEL</button></div><div class="tabla-container"><table id="'+id+'"><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>';
 
