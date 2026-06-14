@@ -407,7 +407,8 @@ function buildFilters(){
     html+=`<div class="filtros-line">`;
     line.keys.forEach(k=>{
       if(k==='__eco__'){
-        html+=`<div class="filtro-group"><label>ECONÓMICO</label><input type="text" class="eco-input" id="eco-input" placeholder="No. unidad..." oninput="handleEcoInput(this.value)"></div>`;
+        html+=`<div class="filtro-group"><label>ECONÓMICO</label><div class="dropdown"><input type="text" class="eco-input" id="eco-input" placeholder="No. unidad..." oninput="handleEcoInput(this.value);filterEcoList(this.value)" onfocus="toggleDD('dd-eco-list')"><div class="dropdown-content" id="dd-eco-list" style="max-height:200px"></div></div></div>`;
+        html+=`<div class="filtro-group" style="align-self:flex-end"><button class="btn-clear" onclick="clearFilters()">Limpiar Filtros</button></div>`;
         return;
       }
       const fm=FILTER_MAP.find(f=>f.key===k);
@@ -420,7 +421,7 @@ function buildFilters(){
           <div class="dropdown-content" id="dd-${k}-content"></div>
         </div></div>`;
     });
-    if(li===0) html+=`<div class="filtro-group" style="margin-left:auto;flex-direction:row;align-items:center;gap:8px"><span id="record-count" style="font-size:9px;color:#888;white-space:nowrap"></span><button class="btn-clear" onclick="clearFilters()">Limpiar Filtros</button></div>`;
+    if(li===0) html+=`<span id="record-count" style="font-size:9px;color:#888;white-space:nowrap;margin-left:auto"></span>`;
     html+='</div>';
   });
   html+='</div><div id="tab-content"></div>';
@@ -430,6 +431,19 @@ function buildFilters(){
 function populateFilters(){
   // Default: VALE = OK (set before building checkboxes)
   F.vale = ['OK'];
+  // Populate eco dropdown list
+  const ecoVals=[...new Set(RAW.map(r=>r.eco).filter(v=>v&&v!=='0'&&v!==''))].sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}));
+  const ecoCt=document.getElementById('dd-eco-list');
+  if(ecoCt){
+    ecoCt.innerHTML='<div style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:1;font-size:9px;color:#888">'+ecoVals.length+' unidades</div>';
+    ecoVals.forEach(v=>{
+      const item=document.createElement('div');item.className='dropdown-item';item.dataset.val=String(v).toLowerCase();
+      item.textContent=v;
+      item.style.cursor='pointer';
+      item.addEventListener('click',()=>{document.getElementById('eco-input').value=v;handleEcoInput(v);ecoCt.classList.remove('open');});
+      ecoCt.appendChild(item);
+    });
+  }
   FILTER_MAP.forEach(fm=>{
     const vals=[...new Set(RAW.map(r=>r[fm.col]).filter(v=>v!==''&&v!=null))];
     if(fm.key==='dia'){
@@ -477,6 +491,11 @@ function filterDropdownItems(input){
 }
 
 function handleEcoInput(v){F.eco=v.trim();renderActiveTab();}
+function filterEcoList(q){
+  q=q.toLowerCase();
+  const items=document.querySelectorAll('#dd-eco-list .dropdown-item');
+  items.forEach(it=>{it.style.display=(!q||it.textContent.toLowerCase().includes(q))?'block':'none';});
+}
 function updateLabel(id,sel,fm){
   const lb=document.getElementById(id+'-label');
   if(!lb)return;
@@ -500,6 +519,19 @@ function clearFilters(){
 
 function getFiltered(){
   const sets={};
+  // Populate eco dropdown list
+  const ecoVals=[...new Set(RAW.map(r=>r.eco).filter(v=>v&&v!=='0'&&v!==''))].sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}));
+  const ecoCt=document.getElementById('dd-eco-list');
+  if(ecoCt){
+    ecoCt.innerHTML='<div style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:1;font-size:9px;color:#888">'+ecoVals.length+' unidades</div>';
+    ecoVals.forEach(v=>{
+      const item=document.createElement('div');item.className='dropdown-item';item.dataset.val=String(v).toLowerCase();
+      item.textContent=v;
+      item.style.cursor='pointer';
+      item.addEventListener('click',()=>{document.getElementById('eco-input').value=v;handleEcoInput(v);ecoCt.classList.remove('open');});
+      ecoCt.appendChild(item);
+    });
+  }
   FILTER_MAP.forEach(fm=>{if(F[fm.key].length)sets[fm.col]=new Set(F[fm.key].map(String));});
   const eco=F.eco.toLowerCase();
   return RAW.filter(r=>{
@@ -591,12 +623,13 @@ function getCurrentPeriod(){
   RAW.forEach(r=>{if(r.anio>maxA||(r.anio===maxA&&r.mes>maxM)){maxA=r.anio;maxM=r.mes;}});
   return{anio:maxA,mes:maxM};
 }
-function buildPivotTable(datos,rowField,id,title,rowLabel,filterYear){
+function buildPivotTable(datos,rowField,id,title,rowLabel,filterYear,reverseRows){
   const yr=filterYear||getCurrentPeriod().anio;
   const d=datos.filter(r=>r.anio===yr);
   const mesesPresent=[...new Set(d.map(r=>r.mes))].sort((a,b)=>a-b);
   const pv=pivot(d,rowField,r=>r.mes,r=>r.importe);
-  const rowKeys=Object.keys(pv.map).sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}));
+  let rowKeys=Object.keys(pv.map).sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}));
+  if(reverseRows)rowKeys=rowKeys.reverse();
   const headers=[rowLabel,...mesesPresent.map(m=>MESES[m-1]),'TOTAL'];
   const rows=[];
   const colTotals={};mesesPresent.forEach(m=>colTotals[m]=0);
@@ -628,21 +661,24 @@ function renderRefacciones(ct,datos){
   const yr=F.anio.length?parseInt(F.anio[0]):cur.anio;
   const dYear=datos.filter(r=>r.anio===yr);
   const dPrevYear=datos.filter(r=>r.anio===yr-1);
+  const displayMonth=F.mes.length?parseInt(F.mes[0]):cur.mes;
+  // For YTD comparison, find max day of current month to compare same period
+  const maxDiaActual=dYear.reduce((mx,r)=>Math.max(mx,r.mes===displayMonth?r.dia:0),0)||31;
   const totalAct=dYear.reduce((s,r)=>s+r.importe,0);
+  // Total prev year up to same month & same day for fair comparison
+  const totalPrevSamePeriod=dPrevYear.filter(r=>r.mes<displayMonth||(r.mes===displayMonth&&r.dia<=maxDiaActual)).reduce((s,r)=>s+r.importe,0);
   const totalPrev=dPrevYear.reduce((s,r)=>s+r.importe,0);
-  const delta=totalPrev?((totalAct-totalPrev)/totalPrev*100):0;
+  const delta=totalPrevSamePeriod?((totalAct-totalPrevSamePeriod)/totalPrevSamePeriod*100):0;
   const regs=dYear.length;
   const mAct=[...new Set(dYear.map(r=>r.mes))].length;
   const prom=mAct?totalAct/mAct:0;
   const dCls=delta>0?'up':delta<0?'down':'flat';
   const dSym=delta>0?'▲':delta<0?'▼':'—';
 
-  // Determine current display month
-  const displayMonth=F.mes.length?parseInt(F.mes[0]):cur.mes;
   const dMonth=dYear.filter(r=>r.mes===displayMonth);
   const totalMes=dMonth.reduce((s,r)=>s+r.importe,0);
   // Mes actual vs mismo mes año anterior
-  const dMesPrev=dPrevYear.filter(r=>r.mes===displayMonth);
+  const dMesPrev=dPrevYear.filter(r=>r.mes===displayMonth&&r.dia<=maxDiaActual);
   const totalMesPrev=dMesPrev.reduce((s,r)=>s+r.importe,0);
   const deltaMes=totalMesPrev?((totalMes-totalMesPrev)/totalMesPrev*100):0;
   const deltaMesCls=deltaMes>0?'up':deltaMes<0?'down':'flat';
@@ -658,7 +694,7 @@ function renderRefacciones(ct,datos){
   html+='<div class="kpi-card"><div class="kpi-label">Variación vs '+(yr-1)+'</div><div class="kpi-value"><span class="kpi-delta '+dCls+'">'+dSym+' '+Math.abs(delta).toFixed(1)+'%</span></div><div class="kpi-sub">'+fmtP(totalPrev)+' año anterior</div></div>';
   html+='<div class="kpi-card"><div class="kpi-label">Promedio Mensual '+yr+'</div><div class="kpi-value">'+fmtP(prom)+'</div><div class="kpi-sub">'+mAct+' meses con datos</div></div>';
   html+='<div class="kpi-card"><div class="kpi-label">Gasto '+MESES[displayMonth-1]+' '+yr+'</div><div class="kpi-value">'+fmtP(totalMes)+'</div><div class="kpi-sub">'+fmtN(dMonth.length)+' registros</div></div>';
-  html+='<div class="kpi-card"><div class="kpi-label">'+MESES[displayMonth-1]+' '+yr+' vs '+(yr-1)+'</div><div class="kpi-value"><span class="kpi-delta '+deltaMesCls+'">'+deltaMesSym+' '+Math.abs(deltaMes).toFixed(1)+'%</span></div><div class="kpi-sub">'+fmtP(totalMesPrev)+' año ant.</div></div>';
+  html+='<div class="kpi-card"><div class="kpi-label">'+MESES[displayMonth-1]+' '+yr+' vs '+(yr-1)+' (d\xeda '+maxDiaActual+')</div><div class="kpi-value"><span class="kpi-delta '+deltaMesCls+'">'+deltaMesSym+' '+Math.abs(deltaMes).toFixed(1)+'%</span></div><div class="kpi-sub">'+fmtP(totalMesPrev)+' año ant.</div></div>';
   html+='<div class="kpi-card"><div class="kpi-label">Mes Más Alto '+yr+'</div><div class="kpi-value">'+fmtP(gastoMax)+'</div><div class="kpi-sub">'+(mesMax?MESES[mesMax-1]:'—')+'</div></div>';
   html+='</div>';
 
@@ -736,7 +772,7 @@ function buildDivisionTable(datos,id,title,yr){
     // Detail rows
     zoneDivs[zona].forEach(div=>{
       let rt=0;
-      tableHtml+='<tr class="grp-'+grpKey+'" style="display:none">';
+      tableHtml+='<tr class="grp-'+grpKey+'">';
       tableHtml+='<td class="label-col" style="padding-left:20px">'+div+'</td>';
       mesesPresent.forEach(m=>{
         const v=(pv.map[div]&&pv.map[div][m])||0;rt+=v;
@@ -748,7 +784,8 @@ function buildDivisionTable(datos,id,title,yr){
   // Grand total
   tableHtml+='<tr class="total-row"><td>GRAN TOTAL</td>';
   mesesPresent.forEach(m=>tableHtml+='<td>'+fmtP(colTotals[m])+'</td>');
-  tableHtml+='<td>'+fmtP(gt)+'</td></tr>';
+  const gtUnits=new Set();curMonthData.filter(r=>r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>gtUnits.add(r.eco));
+  tableHtml+='<td>'+fmtP(gt)+'</td><td>'+gtUnits.size+'</td></tr>';
   tableHtml+='</tbody></table></div></div>';
   return tableHtml;
 }
@@ -789,7 +826,7 @@ function renderChartMensual(dYear,dPrev,yr){
   CHARTS['mensual']=new Chart(ctx,{
     type:'bar',plugins:[ChartDataLabels],
     data:{labels,datasets:[
-      {type:'line',label:''+(yr-1),data:vPrev,borderColor:'#D9D9D9',backgroundColor:'rgba(217,217,217,0.45)',borderWidth:1.5,fill:true,tension:0.3,pointRadius:2,pointBackgroundColor:'#bbb',order:2,datalabels:{display:false}},
+      {type:'line',label:''+(yr-1),data:vPrev,borderColor:'rgba(217,217,217,0)',backgroundColor:'rgba(217,217,217,0.5)',borderWidth:0,fill:true,tension:0,pointRadius:0,order:2,datalabels:{display:false}},
       {type:'bar',label:''+yr,data:vAct,backgroundColor:'#880015',borderColor:'#5d000e',borderWidth:1,order:1,
         datalabels:{anchor:'end',align:'top',color:'#000',font:{size:9,weight:'700'},formatter:v=>fmtP(v)}}
     ]},
@@ -869,13 +906,13 @@ function renderDireccion(ct,datos){
     const grpKey='dir_'+zona;
     // Subtotal row FIRST
     tHtml+='<tr class="subtotal-row" style="cursor:pointer" data-grp="'+grpKey+'" onclick="toggleGroup(this.dataset.grp)">';
-    tHtml+='<td class="label-col" style="font-weight:800">&#9658; '+zona+'</td>';
+    tHtml+='<td class="label-col" style="font-weight:800">&#9660; '+zona+'</td>';
     cuentas.forEach(c=>tHtml+='<td style="font-weight:800">'+fmtP(zt.byC[c])+'</td>');
     tHtml+='<td style="font-weight:800">'+fmtP(zt.total)+'</td></tr>';
     // Detail rows hidden
     (zoneDivs[zona]||[]).forEach(div=>{
       let rt=0;
-      tHtml+='<tr class="grp-'+grpKey+'" style="display:none">';
+      tHtml+='<tr class="grp-'+grpKey+'">';
       tHtml+='<td class="label-col" style="padding-left:20px">'+div+'</td>';
       cuentas.forEach(c=>{const v=pvMap[div+'||'+c]||0;rt+=v;tHtml+='<td>'+(v?fmtP(v):'—')+'</td>';});
       tHtml+='<td style="font-weight:700">'+fmtP(rt)+'</td></tr>';
@@ -908,57 +945,80 @@ function renderFinanciero(ct,datos){
   cRows.push({cells:[{v:'TOTAL'},{v:fmtP(cTotal)}],_cls:'total-row'});
   html+='<div style="flex:2;min-width:220px">'+makeTableHTML('tbl-fin-cuenta','Gasto por Cuenta',['CUENTA','IMPORTE'],cRows)+'</div>';
   // 2. Apartados (VALE=NO) - by DETALLE CAPITALIZACION — más angosta
-  const apart=d.filter(r=>r.vale==='NO');
+  // Apartados: use RAW (ignores VALE filter) for current month
+  const dNoValeFilter=RAW.filter(r=>r.anio===anio&&r.mes===mes);
+  const apart=dNoValeFilter.filter(r=>r.vale==='NO');
   const byApartDet={};apart.forEach(r=>{const k=r.detCap||'SIN DETALLE';byApartDet[k]=(byApartDet[k]||0)+r.importe;});
   const aKeys=Object.keys(byApartDet).sort((a,b)=>byApartDet[b]-byApartDet[a]);
   let aTotal=0;
   const aRows=aKeys.map(k=>{aTotal+=byApartDet[k];return{cells:[{v:k},{v:fmtP(byApartDet[k])}]};});
   aRows.push({cells:[{v:'TOTAL APARTADOS'},{v:fmtP(aTotal)}],_cls:'total-row'});
   html+='<div style="flex:2;min-width:200px">'+makeTableHTML('tbl-fin-apart','Apartados (VALE = NO)',['DETALLE CAPITALIZACION','IMPORTE'],aRows)+'</div>';
-  // 2b. Tipo Mantenimiento — usa RAW completo del mes (ignora filtros, siempre visible)
-  const dTM=RAW.filter(r=>r.anio===anio&&r.mes===mes);
+  // 2b. Tipo Mantenimiento — respeta filtros incluyendo VALE
+  const dTM=d;
   const byTM={};dTM.forEach(r=>{const k=r.tipoMant||'SIN DATO';byTM[k]=(byTM[k]||0)+r.importe;});
   let tmTotal=0;
   const tmRows=Object.entries(byTM).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{tmTotal+=v;return{cells:[{v:k},{v:fmtP(v)}]};});
   tmRows.push({cells:[{v:'TOTAL'},{v:fmtP(tmTotal)}],_cls:'total-row'});
-  html+='<div style="flex:1;min-width:160px">'+makeTableHTML('tbl-fin-tipmant','Tipo Mantenimiento *',['TIPO','IMPORTE'],tmRows)+'</div>';
+  html+='<div style="flex:1;min-width:160px">'+makeTableHTML('tbl-fin-tipmant','Tipo Mantenimiento',['TIPO','IMPORTE'],tmRows)+'</div>';
   html+='</div>';
-  html+='<p style="font-size:9px;color:#888;margin:-10px 0 8px 2px">* Tipo Mantenimiento muestra el mes completo sin filtros adicionales</p>';
   // Top 20 componentes
   const byComp20={};d.forEach(r=>{const k=r.comp||'SIN COMP';byComp20[k]=(byComp20[k]||0)+r.importe;});
   const top20=Object.entries(byComp20).sort((a,b)=>b[1]-a[1]).slice(0,20);
   let t20tot=0;
-  const t20rows=top20.map(([k,v],i)=>{t20tot+=v;return{cells:[{v:i+1},{v:k},{v:fmtP(v)},{v:fmtN(d.filter(r=>r.comp===k).length)}]};});
-  t20rows.push({cells:[{v:''},{v:'TOTAL TOP 20'},{v:fmtP(t20tot)},{v:''}],_cls:'total-row'});
-  html+=makeTableHTML('tbl-fin-top20','Top 20 Componentes con Mayor Gasto',['#','COMPONENTE','IMPORTE','REGISTROS'],t20rows);
-  // 3. Por tipo combustible y tipo unidad
-  const combUni={};let combUniTotal=0;
+  const t20rows=top20.map(([k,v],i)=>{t20tot+=v;return{cells:[{v:i+1},{v:k},{v:fmtP(v)}]};});
+  t20rows.push({cells:[{v:''},{v:'TOTAL TOP 20'},{v:fmtP(t20tot)}],_cls:'total-row'});
+  html+=makeTableHTML('tbl-fin-top20','Top 20 Componentes con Mayor Gasto',['#','COMPONENTE','IMPORTE'],t20rows);
+  // 3. Gasto por Unidades (Combustible x TipoUnidad en Y axis) + dispersión N/A
+  const cuData={};const cuCombTotals={};let cuGT=0;
+  // Separate #N/A eco rows for proportional distribution
+  const dWithEcoFin=d.filter(r=>r.eco&&r.eco!=='0'&&r.eco!==''&&!r.eco.startsWith('#')&&!r.eco.toLowerCase().startsWith('pdte'));
+  const dNoEcoFin=d.filter(r=>!r.eco||r.eco==='0'||r.eco===''||r.eco.startsWith('#')||r.eco.toLowerCase().startsWith('pdte'));
+  const noEcoTotalFin=dNoEcoFin.reduce((s,r)=>s+r.importe,0);
+  // Count units per combo for proportional split
+  const unitCounts={};
+  dWithEcoFin.forEach(r=>{
+    const key=r.tipoComb+'||'+r.tipoUni;
+    if(!unitCounts[key])unitCounts[key]=new Set();
+    unitCounts[key].add(r.eco);
+  });
+  let totalUnitsFin=0;Object.values(unitCounts).forEach(s=>totalUnitsFin+=s.size);
+  // Build data with proportional N/A distribution
+  const combOrder=['DIESEL','GAS'];
   d.forEach(r=>{
     const key=r.tipoComb+'||'+r.tipoUni;
-    combUni[key]=(combUni[key]||0)+r.importe;
-    combUniTotal+=r.importe;
+    cuData[key]=(cuData[key]||0)+r.importe;
   });
-  const combs=[...new Set(d.map(r=>r.tipoComb))].sort();
-  const unis=[...new Set(d.map(r=>r.tipoUni))].sort();
-  const cuHeaders=['TIPO COMBUSTIBLE / TIPO UNIDAD',...unis,'TOTAL'];
-  const cuRows=[];
-  combs.forEach(comb=>{
-    let ct2=0;const cells=[{v:comb,style:'font-weight:700'}];
-    unis.forEach(uni=>{
-      const v=combUni[comb+'||'+uni]||0;ct2+=v;
-      cells.push({v:v?fmtP(v):'—'});
+  // Add proportional N/A
+  const naProp={};
+  Object.entries(unitCounts).forEach(([key,s])=>{
+    naProp[key]=totalUnitsFin?(s.size/totalUnitsFin)*noEcoTotalFin:0;
+  });
+  // Build table
+  const combs2=[...new Set(d.map(r=>r.tipoComb))].sort((a,b)=>{
+    const oa=combOrder.indexOf(a),ob=combOrder.indexOf(b);
+    return(oa===-1?99:oa)-(ob===-1?99:ob);
+  });
+  const cuHeaders2=['COMB','TIPO','GASTO TIPO','GASTO COMBUS'];
+  const cuRows2=[];let cuGT2=0;
+  combs2.forEach(comb=>{
+    const unis2=[...new Set(d.filter(r=>r.tipoComb===comb).map(r=>r.tipoUni))].sort();
+    let combTotal=0;
+    unis2.forEach(uni=>{
+      const key=comb+'||'+uni;
+      const directGasto=cuData[key]||0;
+      const naAdd=naProp[key]||0;
+      const total=directGasto+naAdd;
+      combTotal+=total;
+      cuRows2.push({cells:[{v:comb},{v:uni},{v:fmtP(total)},{v:''}]});
     });
-    cells.push({v:fmtP(ct2),style:'font-weight:700'});
-    cuRows.push({cells});
+    // Set combTotal on first row of this comb group
+    const firstIdx=cuRows2.length-unis2.length;
+    if(firstIdx>=0&&cuRows2[firstIdx])cuRows2[firstIdx].cells[3]={v:fmtP(combTotal),style:'font-weight:700'};
+    cuGT2+=combTotal;
   });
-  const cuTotCells=[{v:'TOTAL',style:'font-weight:800'}];
-  unis.forEach(uni=>{
-    let t=0;combs.forEach(comb=>{t+=(combUni[comb+'||'+uni]||0);});
-    cuTotCells.push({v:fmtP(t),style:'font-weight:800'});
-  });
-  cuTotCells.push({v:fmtP(combUniTotal),style:'font-weight:800'});
-  cuRows.push({cells:cuTotCells,_cls:'total-row'});
-  html+=makeTableHTML('tbl-fin-combuni','Gasto por Tipo Combustible y Tipo Unidad',cuHeaders,cuRows);
+  cuRows2.push({cells:[{v:''},{v:'TOTAL'},{v:fmtP(cuGT2)},{v:fmtP(cuGT2)}],_cls:'total-row'});
+  html+=makeTableHTML('tbl-fin-combuni','Gasto por Unidades',cuHeaders2,cuRows2);
 
   // 4. Gasto promedio por unidad
   html+=buildAvgPerUnit(d,'tbl-fin-avg','Gasto Promedio por Unidad — '+MESES[mes-1]+' '+anio);
@@ -967,9 +1027,9 @@ function renderFinanciero(ct,datos){
 }
 
 function buildAvgPerUnit(d,id,title){
-  // Count unique ecos per combo, distribute no-eco proportionally
-  const withEco=d.filter(r=>r.eco&&r.eco!=='0'&&r.eco!=='');
-  const noEco=d.filter(r=>!r.eco||r.eco==='0'||r.eco==='');
+  // Count unique ecos per combo, distribute no-eco proportionally (exclude #N/A, Pdte)
+  const withEco=d.filter(r=>r.eco&&r.eco!=='0'&&r.eco!==''&&!r.eco.startsWith('#')&&!r.eco.toLowerCase().startsWith('pdte'));
+  const noEco=d.filter(r=>!r.eco||r.eco==='0'||r.eco===''||r.eco.startsWith('#')||r.eco.toLowerCase().startsWith('pdte'));
   const combos={};
   withEco.forEach(r=>{
     const key=r.tipoComb+'||'+r.tipoUni;
@@ -985,7 +1045,8 @@ function buildAvgPerUnit(d,id,title){
   const headers=['TIPO COMBUSTIBLE','TIPO UNIDAD','GASTO DIRECTO','GASTO DISTRIBUIDO','GASTO TOTAL','UNIDADES','PROMEDIO/UNIDAD'];
   const rows=[];
   let gt=0;
-  Object.entries(combos).sort((a,b)=>b[1].gasto-a[1].gasto).forEach(([k,v])=>{
+  const combOrd=['DIESEL','GAS'];
+  Object.entries(combos).sort((a,b)=>{const ca=combOrd.indexOf(a[1].tipoComb),cb=combOrd.indexOf(b[1].tipoComb);if(ca!==cb)return(ca===-1?99:ca)-(cb===-1?99:cb);return b[1].gasto-a[1].gasto;}).forEach(([k,v])=>{
     const prop=totalUnits?(v.ecos.size/totalUnits)*noEcoTotal:0;
     const total=v.gasto+prop;
     gt+=total;
@@ -1179,18 +1240,15 @@ function renderTipoUnidad(ct,datos){
   let html='<div class="section-title">Gasto por Tipo de Unidad — '+yr+'</div>';
 
   // Combined: Chasis + Carrocería 4-in-1
-  html+=buildFleet4Table(d,'tbl-tu-fleet4','Chasis y Carrocería — '+yr);
+  html+=buildFleet4Table(d,datos,'tbl-tu-fleet4','Gasto por Marca Chasis/Tipo Chasis + Marca Carrocería/Tipo Carrocería — '+yr);
   // Tipo Motor
-  html+=buildPivotTable(datos,'tipoMot','tbl-tu-motor','Gasto por Tipo Motor','TIPO MOTOR',yr);
-  // Marca Carrocería individual
-  html+=buildFleetTable(d,'marcaCarr','tipoCarr','tbl-tu-carr','Marca y Tipo Carrocería','MARCA CARROCERÍA','TIPO CARROCERÍA');
-  // Marca Chasis individual
-  html+=buildFleetTable(d,'marcaChas','tipoChas','tbl-tu-chas','Marca y Tipo Chasis','MARCA CHASIS','TIPO CHASIS');
+  html+=buildMotorTable(d,'tbl-tu-motor','Gasto por Tipo Motor — '+yr+' (ACTIVAR FILTRO SISTEMA: MOTOR + ESCAPE + ALIMENTACIÓN + COMBUSTIBLE)',yr);
+  // (Tablas individuales de carrocería/chasis eliminadas por solicitud)
 
   ct.innerHTML=html;
 }
 
-function buildFleet4Table(datos,id,title){
+function buildFleet4Table(datos,allDatos,id,title){
   // 4-level: MarcaChasis > TipoChasis > MarcaCarr > TipoCarr
   const mesesPresent=[...new Set(datos.map(r=>r.mes))].sort((a,b)=>a-b);
   const tree={};
@@ -1203,7 +1261,10 @@ function buildFleet4Table(datos,id,title){
     if(!tree[mc][tc][mk][tk])tree[mc][tc][mk][tk]={};
     tree[mc][tc][mk][tk][r.mes]=(tree[mc][tc][mk][tk][r.mes]||0)+r.importe;
   });
-  const headers=['CHASIS / CARROCERÍA',...mesesPresent.map(m=>MESES[m-1]),'TOTAL'];
+  // Get current month unit counts
+  const curP=getCurrentPeriod();
+  const curMonthData=allDatos.filter(r=>r.anio===curP.anio&&r.mes===curP.mes);
+  const headers=['CHASIS / CARROCERÍA',...mesesPresent.map(m=>MESES[m-1]),'TOTAL','UNIADES MES'];
   const colTotals={};mesesPresent.forEach(m=>colTotals[m]=0);let gt=0;
   let tableHtml='<div class="tabla-wrap"><div class="tabla-toolbar"><span>'+title+'</span><button class="btn-dl" onclick="downloadTable(this.dataset.tid)" data-tid=""+ id +"">⬇ DESCARGA EXCEL</button></div><div class="tabla-container"><table id="'+id+'"><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>';
 
@@ -1222,16 +1283,19 @@ function buildFleet4Table(datos,id,title){
     tableHtml+='<tr class="subtotal-row" style="cursor:pointer" data-grp="'+ mcKey +'" onclick="toggleGroup(this.dataset.grp)">';
     tableHtml+='<td class="label-col" style="font-weight:800">▶ '+mc+'</td>';
     mesesPresent.forEach(m=>tableHtml+='<td style="font-weight:800">'+fmtP(mcTots[m])+'</td>');
-    tableHtml+='<td style="font-weight:800">'+fmtP(mcTot)+'</td></tr>';
-    // Detail rows
+    // Count units in current month for this MC
+    const mcUnits=new Set();curMonthData.filter(r=>r.marcaChas===mc&&r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>mcUnits.add(r.eco));
+    tableHtml+='<td style="font-weight:800">'+fmtP(mcTot)+'</td><td style="font-weight:800">'+mcUnits.size+'</td></tr>';
+    // Detail rows (expanded by default)
     Object.keys(tree[mc]).sort().forEach(tc=>{
       Object.keys(tree[mc][tc]).sort().forEach(mk=>{
         Object.keys(tree[mc][tc][mk]).sort().forEach(tk=>{
           let rt=0;
-          tableHtml+='<tr class="grp-'+mcKey+'" style="display:none">';
+          tableHtml+='<tr class="grp-'+mcKey+'">';
           tableHtml+='<td class="label-col" style="padding-left:20px;font-size:9px">'+tc+' / '+mk+' / '+tk+'</td>';
           mesesPresent.forEach(m=>{const v=tree[mc][tc][mk][tk][m]||0;rt+=v;tableHtml+='<td>'+fmtP(v)+'</td>';});
-          tableHtml+='<td style="font-weight:600">'+fmtP(rt)+'</td></tr>';
+          const detUnits=new Set();curMonthData.filter(r=>r.marcaChas===mc&&r.tipoChas===tc&&r.marcaCarr===mk&&r.tipoCarr===tk&&r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>detUnits.add(r.eco));
+          tableHtml+='<td style="font-weight:600">'+fmtP(rt)+'</td><td>'+detUnits.size+'</td></tr>';
         });
       });
     });
@@ -1280,6 +1344,49 @@ function buildFleetTable(datos,groupField,detailField,id,title,gLabel,dLabel){
   totCells.push({v:fmtP(gt),style:'font-weight:800'});
   rows.push({cells:totCells,_cls:'total-row'});
   return makeTableHTML(id,title,headers,rows);
+}
+
+
+function buildMotorTable(datos,id,title,yr){
+  const mesesPresent=[...new Set(datos.map(r=>r.mes))].sort((a,b)=>a-b);
+  const curP=getCurrentPeriod();
+  const curMonthData=datos.filter(r=>r.anio===curP.anio&&r.mes===curP.mes);
+  const tree={};
+  datos.forEach(r=>{
+    const mm=r.marcaMot||'SIN DATO',tm=r.tipoMot||'SIN DATO';
+    if(!tree[mm])tree[mm]={};
+    if(!tree[mm][tm])tree[mm][tm]={};
+    tree[mm][tm][r.mes]=(tree[mm][tm][r.mes]||0)+r.importe;
+  });
+  const headers=['MARCA / TIPO MOTOR',...mesesPresent.map(m=>MESES[m-1]),'TOTAL','UNIDADES MES'];
+  const colTotals={};mesesPresent.forEach(m=>colTotals[m]=0);let gt=0;
+  let tableHtml='<div class="tabla-wrap"><div class="tabla-toolbar"><span>'+title+'</span><button class="btn-dl" onclick="downloadTable(this.dataset.tid)" data-tid="'+id+'">⬇ DESCARGA EXCEL</button></div><div class="tabla-container"><table id="'+id+'"><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>';
+  Object.keys(tree).sort().forEach(mm=>{
+    let mmTot=0;const mmTots={};mesesPresent.forEach(m=>mmTots[m]=0);
+    const mmKey=id+'_'+mm.replace(/\s/g,'_');
+    Object.keys(tree[mm]).sort().forEach(tm=>{
+      mesesPresent.forEach(m=>{const v=tree[mm][tm][m]||0;mmTots[m]+=v;mmTot+=v;colTotals[m]+=v;gt+=v;});
+    });
+    const mmUnits=new Set();curMonthData.filter(r=>(r.marcaMot||'SIN DATO')===mm&&r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>mmUnits.add(r.eco));
+    tableHtml+='<tr class="subtotal-row" style="cursor:pointer" data-grp="'+mmKey+'" onclick="toggleGroup(this.dataset.grp)">';
+    tableHtml+='<td class="label-col" style="font-weight:800">&#9660; '+mm+'</td>';
+    mesesPresent.forEach(m=>tableHtml+='<td style="font-weight:800">'+fmtP(mmTots[m])+'</td>');
+    tableHtml+='<td style="font-weight:800">'+fmtP(mmTot)+'</td><td style="font-weight:800">'+mmUnits.size+'</td></tr>';
+    Object.keys(tree[mm]).sort().forEach(tm=>{
+      let rt=0;
+      tableHtml+='<tr class="grp-'+mmKey+'">';
+      tableHtml+='<td class="label-col" style="padding-left:20px">'+tm+'</td>';
+      mesesPresent.forEach(m=>{const v=tree[mm][tm][m]||0;rt+=v;tableHtml+='<td>'+fmtP(v)+'</td>';});
+      const tmUnits=new Set();curMonthData.filter(r=>(r.marcaMot||'SIN DATO')===mm&&(r.tipoMot||'SIN DATO')===tm&&r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>tmUnits.add(r.eco));
+      tableHtml+='<td style="font-weight:600">'+fmtP(rt)+'</td><td>'+tmUnits.size+'</td></tr>';
+    });
+  });
+  tableHtml+='<tr class="total-row"><td>GRAN TOTAL</td>';
+  mesesPresent.forEach(m=>tableHtml+='<td>'+fmtP(colTotals[m])+'</td>');
+  const gtUnits2=new Set();curMonthData.filter(r=>r.eco&&r.eco!=='0'&&r.eco!=='').forEach(r=>gtUnits2.add(r.eco));
+  tableHtml+='<td>'+fmtP(gt)+'</td><td>'+gtUnits2.size+'</td></tr>';
+  tableHtml+='</tbody></table></div></div>';
+  return tableHtml;
 }
 
 // ============================================================
@@ -1359,6 +1466,28 @@ function renderProyecciones(ct,datos){
   hRows.push({cells:[{v:anioAct+' (proyectado)'},{v:fmtP(projWeighted)},{v:byYear[years[years.length-1]]?fmtPct((projWeighted-byYear[years[years.length-1]].total)/byYear[years[years.length-1]].total*100):'—'}],_cls:'subtotal-row'});
   html+=makeTableHTML('tbl-proj-hist','Historial '+MESES[mesAct-1]+' por Año',hHeaders,hRows);
 
+  // Projection distribution by zona/division
+  const projRatio=gastoAcum>0?projWeighted/gastoAcum:1;
+  const divGasto={};const divZoneMap={};
+  dMes.forEach(r=>{divGasto[r.div]=(divGasto[r.div]||0)+r.importe;divZoneMap[r.div]=r.zona;});
+  const zoneDivsP={LOCAL:[],FORANEA:[]};
+  Object.keys(divZoneMap).sort().forEach(dv=>{const z=divZoneMap[dv];if(z==='LOCAL')zoneDivsP.LOCAL.push(dv);else if(z==='FORANEA')zoneDivsP.FORANEA.push(dv);});
+  const pdHeaders=['ZONA / DIVISIÓN','GASTO ACTUAL','PROYECCIÓN CIERRE','PARTICIPACIÓN'];
+  let pdHtml='';let pdGT=0;
+  const pdRows=[];
+  ['LOCAL','FORANEA'].forEach(zona=>{
+    let zTotal=0;let zProj=0;
+    (zoneDivsP[zona]||[]).forEach(dv=>{const g=divGasto[dv]||0;const p=g*projRatio;zTotal+=g;zProj+=p;});
+    pdRows.push({cells:[{v:zona,style:'font-weight:800'},{v:fmtP(zTotal),style:'font-weight:800'},{v:fmtP(zTotal*projRatio),style:'font-weight:800'},{v:(gastoAcum?(zTotal/gastoAcum*100).toFixed(1):'0')+'%',style:'font-weight:800'}],_cls:'subtotal-row'});
+    (zoneDivsP[zona]||[]).forEach(dv=>{
+      const g=divGasto[dv]||0;const pct=gastoAcum?(g/gastoAcum*100).toFixed(1):'0';
+      pdRows.push({cells:[{v:'    '+dv},{v:fmtP(g)},{v:fmtP(g*projRatio)},{v:pct+'%'}]});
+    });
+    pdGT+=zTotal;
+  });
+  pdRows.push({cells:[{v:'GRAN TOTAL'},{v:fmtP(pdGT)},{v:fmtP(projWeighted)},{v:'100%'}],_cls:'total-row'});
+  html+=makeTableHTML('tbl-proj-dist','Distribución de Proyección por División',pdHeaders,pdRows);
+
   ct.innerHTML=html;
   renderChartProj(dMes,maxDayData,totalDays,projLinear,projHist,mesAct,anioAct);
 }
@@ -1394,12 +1523,14 @@ function renderChartProj(dMes,maxDay,totalDays,projL,projH,mes,anio){
 function renderDesviaciones(ct,datos){
   const cur=getCurrentPeriod();
   let html='<div class="section-title">Análisis de Desviaciones y Alertas</div>';
-  html+='<p style="font-size:11px;color:#666;margin-bottom:16px">Análisis automático de patrones inusuales, movimientos recurrentes sospechosos y desviaciones significativas sobre datos filtrados.</p>';
+  const curDesv=getCurrentPeriod();
+  const datosDesv=datos.filter(r=>r.anio===curDesv.anio);
+  html+='<p style="font-size:11px;color:#666;margin-bottom:16px">Análisis automático de patrones inusuales — Año '+curDesv.anio+'</p>';
 
   // 1. Spike detection: components with spend > 3x their monthly average
   html+='<div class="section-title" style="font-size:12px">Picos Anómalos por Componente</div>';
   const byCompMonth={};
-  datos.forEach(r=>{
+  datosDesv.forEach(r=>{
     const k=r.comp;const pk=r.anio*100+r.mes;
     if(!byCompMonth[k])byCompMonth[k]={};
     byCompMonth[k][pk]=(byCompMonth[k][pk]||0)+r.importe;
@@ -1432,7 +1563,7 @@ function renderDesviaciones(ct,datos){
   // 2. Unusual originador patterns: originadores with concentrated spending
   html+='<div class="section-title" style="font-size:12px">Concentración por Originador</div>';
   const byOrig={};
-  datos.forEach(r=>{
+  datosDesv.forEach(r=>{
     if(!r.origBatch)return;
     if(!byOrig[r.origBatch])byOrig[r.origBatch]={total:0,comps:new Set(),divs:new Set(),count:0};
     byOrig[r.origBatch].total+=r.importe;
@@ -1458,7 +1589,7 @@ function renderDesviaciones(ct,datos){
   // 3. Same-day duplicate-like patterns
   html+='<div class="section-title" style="font-size:12px">Movimientos Repetitivos (Mismo Día, Componente, Importe)</div>';
   const dupes={};
-  datos.forEach(r=>{
+  datosDesv.forEach(r=>{
     const key=r.anio+'-'+r.mes+'-'+r.dia+'|'+r.comp+'|'+r.importe+'|'+r.div;
     dupes[key]=(dupes[key]||0)+1;
   });
@@ -1481,7 +1612,7 @@ function renderDesviaciones(ct,datos){
   // 4. Weekend/holiday spending patterns
   html+='<div class="section-title" style="font-size:12px">Gasto en Fin de Semana</div>';
   const weekendData={we:0,wd:0,weCount:0,wdCount:0};
-  datos.forEach(r=>{
+  datosDesv.forEach(r=>{
     const dow=r.fecha.getDay();
     if(dow===0||dow===6){weekendData.we+=r.importe;weekendData.weCount++;}
     else{weekendData.wd+=r.importe;weekendData.wdCount++;}
@@ -1500,7 +1631,7 @@ function renderDesviaciones(ct,datos){
   let y6=cur6P.anio,m6=cur6P.mes;const p6=[];
   for(let i=0;i<6;i++){p6.unshift(y6*100+m6);m6--;if(m6===0){m6=12;y6--;}}
   const p6Set=new Set(p6);
-  const d6e=datos.filter(r=>p6Set.has(r.anio*100+r.mes)&&r.eco&&r.eco!=='0'&&r.eco!=='');
+  const d6e=datosDesv.filter(r=>p6Set.has(r.anio*100+r.mes)&&r.eco&&r.eco!=='0'&&r.eco!==''&&!r.eco.toLowerCase().startsWith('pdte'));
   const ecoCompMap={};
   d6e.forEach(r=>{
     const key=r.eco+'||'+r.comp;
@@ -1527,7 +1658,7 @@ function renderDesviaciones(ct,datos){
 
   // 6. High-value single transactions
   html+='<div class="section-title" style="font-size:12px">Transacciones de Alto Valor Individual</div>';
-  const sorted=[...datos].sort((a,b)=>b.importe-a.importe);
+  const sorted=[...datosDesv].sort((a,b)=>b.importe-a.importe);
   const hvHeaders=['FECHA','COMPONENTE','DIVISIÓN','CUENTA','ECONÓMICO','IMPORTE','CONCEPTO'];
   const hvRows=sorted.slice(0,20).map(r=>({cells:[
     {v:r.dia+'/'+r.mes+'/'+r.anio},{v:r.comp},{v:r.div},{v:r.cuenta},{v:r.eco},{v:fmtP(r.importe)},{v:(r.concepto||'').substring(0,40)}
