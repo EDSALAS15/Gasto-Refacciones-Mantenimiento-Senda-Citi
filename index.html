@@ -97,11 +97,7 @@
     .upload-input{display:none}
 
     /* OVERLAY */
-    #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center;flex-direction:column;gap:16px}
-    #overlay.show{display:flex}
-    .spinner{width:48px;height:48px;border:5px solid #fff;border-top-color:var(--rojo);border-radius:50%;animation:spin .8s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    #overlay-text{color:#fff;font-size:14px;font-weight:600}
+
     .no-data{text-align:center;padding:30px;color:#aaa;font-size:13px}
     ::-webkit-scrollbar{width:6px;height:6px}
     ::-webkit-scrollbar-track{background:#f0f0f0}
@@ -119,7 +115,7 @@
   </style>
 </head>
 <body>
-<div id="overlay"><div class="spinner"></div><div id="overlay-text">Cargando datos...</div></div>
+
 
 <div class="header-bar">
   <div class="header-logo">
@@ -554,11 +550,7 @@ function toggleGroup(grpKey){
     if(firstTd){firstTd.textContent=firstTd.textContent.replace(visible?'▼':'▶',visible?'▶':'▼');}
   }
 }
-function showOverlay(show,txt){
-  const o=document.getElementById('overlay');
-  o.classList.toggle('show',show);
-  if(txt)document.getElementById('overlay-text').textContent=txt;
-}
+function showOverlay(show,txt){}
 function pivot(datos,rowKey,colKey,valKey){
   const map={},cols=new Set();
   datos.forEach(r=>{
@@ -797,7 +789,7 @@ function renderChartMensual(dYear,dPrev,yr){
   CHARTS['mensual']=new Chart(ctx,{
     type:'bar',plugins:[ChartDataLabels],
     data:{labels,datasets:[
-      {type:'bar',label:''+(yr-1),data:vPrev,backgroundColor:'#D9D9D9',borderColor:'#bbb',borderWidth:1,order:2,datalabels:{display:false}},
+      {type:'line',label:''+(yr-1),data:vPrev,borderColor:'#D9D9D9',backgroundColor:'rgba(217,217,217,0.45)',borderWidth:1.5,fill:true,tension:0.3,pointRadius:2,pointBackgroundColor:'#bbb',order:2,datalabels:{display:false}},
       {type:'bar',label:''+yr,data:vAct,backgroundColor:'#880015',borderColor:'#5d000e',borderWidth:1,order:1,
         datalabels:{anchor:'end',align:'top',color:'#000',font:{size:9,weight:'700'},formatter:v=>fmtP(v)}}
     ]},
@@ -853,33 +845,49 @@ function renderDireccion(ct,datos){
   });
 
   const headers=['ZONA / DIVISIÓN',...cuentas,'TOTAL'];
-  const rows=[];
   let gtByC={};cuentas.forEach(c=>gtByC[c]=0);let gt=0;
 
+  // Pre-calculate zone totals for collapsible header
+  const zTotalsAll={};
   ['LOCAL','FORANEA'].forEach(zona=>{
     let ztByC={};cuentas.forEach(c=>ztByC[c]=0);let zt=0;
     (zoneDivs[zona]||[]).forEach(div=>{
-      let rt=0;const cells=[{v:'    '+div}];
-      cuentas.forEach(c=>{
-        const v=pvMap[div+'||'+c]||0;rt+=v;ztByC[c]+=v;gtByC[c]+=v;
-        cells.push({v:v?fmtP(v):'—'});
-      });
-      zt+=rt;gt+=rt;
-      cells.push({v:fmtP(rt),style:'font-weight:700'});
-      rows.push({cells});
+      cuentas.forEach(c=>{const v=pvMap[div+'||'+c]||0;ztByC[c]+=v;zt+=v;gtByC[c]+=v;gt+=v;});
     });
-    const stCells=[{v:'SUBTOTAL '+zona,style:'font-weight:800'}];
-    cuentas.forEach(c=>stCells.push({v:fmtP(ztByC[c]),style:'font-weight:800'}));
-    stCells.push({v:fmtP(zt),style:'font-weight:800'});
-    rows.push({cells:stCells,_cls:'subtotal-row'});
+    zTotalsAll[zona]={byC:ztByC,total:zt};
   });
-  const totCells=[{v:'GRAN TOTAL',style:'font-weight:800'}];
-  cuentas.forEach(c=>totCells.push({v:fmtP(gtByC[c]),style:'font-weight:800'}));
-  totCells.push({v:fmtP(gt),style:'font-weight:800'});
-  rows.push({cells:totCells,_cls:'total-row'});
 
-  ct.innerHTML=`<div class="section-title">Gasto por Dirección — ${MESES[mes-1]} ${anio}</div>`+
-    makeTableHTML('tbl-dir','Cuenta vs División — '+MESES[mes-1]+' '+anio,headers,rows);
+  // Build HTML table directly (collapsible)
+  const tblId='tbl-dir';
+  let tHtml='<div class="tabla-wrap"><div class="tabla-toolbar"><span>Cuenta vs División — '+MESES[mes-1]+' '+anio+'</span>'+
+    '<button class="btn-dl" onclick="downloadTable(this.dataset.tid)" data-tid="'+tblId+'">⬇ DESCARGA EXCEL</button></div>'+
+    '<div class="tabla-container"><table id="'+tblId+'"><thead><tr>'+
+    headers.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>';
+
+  ['LOCAL','FORANEA'].forEach(zona=>{
+    const zt=zTotalsAll[zona];
+    const grpKey='dir_'+zona;
+    // Subtotal row FIRST
+    tHtml+='<tr class="subtotal-row" style="cursor:pointer" data-grp="'+grpKey+'" onclick="toggleGroup(this.dataset.grp)">';
+    tHtml+='<td class="label-col" style="font-weight:800">&#9658; '+zona+'</td>';
+    cuentas.forEach(c=>tHtml+='<td style="font-weight:800">'+fmtP(zt.byC[c])+'</td>');
+    tHtml+='<td style="font-weight:800">'+fmtP(zt.total)+'</td></tr>';
+    // Detail rows hidden
+    (zoneDivs[zona]||[]).forEach(div=>{
+      let rt=0;
+      tHtml+='<tr class="grp-'+grpKey+'" style="display:none">';
+      tHtml+='<td class="label-col" style="padding-left:20px">'+div+'</td>';
+      cuentas.forEach(c=>{const v=pvMap[div+'||'+c]||0;rt+=v;tHtml+='<td>'+(v?fmtP(v):'—')+'</td>';});
+      tHtml+='<td style="font-weight:700">'+fmtP(rt)+'</td></tr>';
+    });
+  });
+  // Grand total
+  tHtml+='<tr class="total-row"><td>GRAN TOTAL</td>';
+  cuentas.forEach(c=>tHtml+='<td>'+fmtP(gtByC[c])+'</td>');
+  tHtml+='<td>'+fmtP(gt)+'</td></tr>';
+  tHtml+='</tbody></table></div></div>';
+
+  ct.innerHTML='<div class="section-title">Gasto por Dirección — '+MESES[mes-1]+' '+anio+'</div>'+tHtml;
 }
 
 // ============================================================
@@ -898,22 +906,24 @@ function renderFinanciero(ct,datos){
   let cTotal=0;
   const cRows=cKeys.map(k=>{cTotal+=byCuenta[k];return{cells:[{v:k},{v:fmtP(byCuenta[k])}]};});
   cRows.push({cells:[{v:'TOTAL'},{v:fmtP(cTotal)}],_cls:'total-row'});
-  html+='<div style="flex:2;min-width:240px">'+makeTableHTML('tbl-fin-cuenta','Gasto por Cuenta',['CUENTA','IMPORTE'],cRows)+'</div>';
-  // 2. Apartados (VALE=NO) - by DETALLE CAPITALIZACION
+  html+='<div style="flex:2;min-width:220px">'+makeTableHTML('tbl-fin-cuenta','Gasto por Cuenta',['CUENTA','IMPORTE'],cRows)+'</div>';
+  // 2. Apartados (VALE=NO) - by DETALLE CAPITALIZACION — más angosta
   const apart=d.filter(r=>r.vale==='NO');
   const byApartDet={};apart.forEach(r=>{const k=r.detCap||'SIN DETALLE';byApartDet[k]=(byApartDet[k]||0)+r.importe;});
   const aKeys=Object.keys(byApartDet).sort((a,b)=>byApartDet[b]-byApartDet[a]);
   let aTotal=0;
   const aRows=aKeys.map(k=>{aTotal+=byApartDet[k];return{cells:[{v:k},{v:fmtP(byApartDet[k])}]};});
   aRows.push({cells:[{v:'TOTAL APARTADOS'},{v:fmtP(aTotal)}],_cls:'total-row'});
-  html+='<div style="flex:3;min-width:300px">'+makeTableHTML('tbl-fin-apart','Apartados (VALE = NO)',['DETALLE CAPITALIZACION','IMPORTE'],aRows)+'</div>';
-  // 2b. Tipo Mantenimiento
-  const byTM={};d.forEach(r=>{const k=r.tipoMant||'SIN DATO';byTM[k]=(byTM[k]||0)+r.importe;});
+  html+='<div style="flex:2;min-width:200px">'+makeTableHTML('tbl-fin-apart','Apartados (VALE = NO)',['DETALLE CAPITALIZACION','IMPORTE'],aRows)+'</div>';
+  // 2b. Tipo Mantenimiento — usa RAW completo del mes (ignora filtros, siempre visible)
+  const dTM=RAW.filter(r=>r.anio===anio&&r.mes===mes);
+  const byTM={};dTM.forEach(r=>{const k=r.tipoMant||'SIN DATO';byTM[k]=(byTM[k]||0)+r.importe;});
   let tmTotal=0;
   const tmRows=Object.entries(byTM).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{tmTotal+=v;return{cells:[{v:k},{v:fmtP(v)}]};});
   tmRows.push({cells:[{v:'TOTAL'},{v:fmtP(tmTotal)}],_cls:'total-row'});
-  html+='<div style="flex:1;min-width:180px">'+makeTableHTML('tbl-fin-tipmant','Tipo Mantenimiento',['TIPO','IMPORTE'],tmRows)+'</div>';
+  html+='<div style="flex:1;min-width:160px">'+makeTableHTML('tbl-fin-tipmant','Tipo Mantenimiento *',['TIPO','IMPORTE'],tmRows)+'</div>';
   html+='</div>';
+  html+='<p style="font-size:9px;color:#888;margin:-10px 0 8px 2px">* Tipo Mantenimiento muestra el mes completo sin filtros adicionales</p>';
   // Top 20 componentes
   const byComp20={};d.forEach(r=>{const k=r.comp||'SIN COMP';byComp20[k]=(byComp20[k]||0)+r.importe;});
   const top20=Object.entries(byComp20).sort((a,b)=>b[1]-a[1]).slice(0,20);
