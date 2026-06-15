@@ -31,7 +31,6 @@
     .tab-btn:hover{background:rgba(255,255,255,.06);color:#fff}
     .tab-btn.active{background:rgba(255,255,255,.1);color:#fff;border-left-color:var(--rojo)}
     main{flex:1;overflow-y:auto;padding:18px 20px}
-    .dash-panel{display:none}.dash-panel.active{display:block}
 
     /* FILTROS */
     .filtros{background:#f9f9f9;border:1px solid #e8e8e8;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
@@ -52,7 +51,6 @@
     .eco-input:focus{outline:none;border-color:var(--rojo)}
     .btn-clear{background:#E4002B;border:1px solid #E4002B;border-radius:4px;padding:4px 12px;font-size:10px;font-family:'Segoe UI',Tahoma,sans-serif;color:#fff;cursor:pointer;font-weight:700;transition:all .15s}
     .btn-clear:hover{background:#b8001f;border-color:#b8001f}
-    .line-label{font-size:8px;font-weight:700;color:var(--rojo);text-transform:uppercase;letter-spacing:.5px;padding:1px 6px;background:rgba(228,0,43,.06);border-radius:3px;white-space:nowrap;align-self:center}
 
     /* KPI CARDS */
     .kpi-row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
@@ -96,8 +94,6 @@
     .upload-area .upload-sub{font-size:11px;margin-top:4px}
     .upload-input{display:none}
 
-    /* OVERLAY */
-
     .no-data{text-align:center;padding:30px;color:#aaa;font-size:13px}
     ::-webkit-scrollbar{width:6px;height:6px}
     ::-webkit-scrollbar-track{background:#f0f0f0}
@@ -109,13 +105,9 @@
     .badge-alert{background:#FF0000;color:#fff;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700}
     .badge-warn{background:#FFC000;color:#333;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700}
     .badge-info{background:var(--azul);color:#fff;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700}
-    .proj-box{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:20px;text-align:center;margin-bottom:16px}
-    .proj-value{font-size:32px;font-weight:800;color:#333F48}
-    .proj-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
   </style>
 </head>
 <body>
-
 
 <div class="header-bar">
   <div class="header-logo">
@@ -204,7 +196,6 @@ let DICT_POS = {};
 // CARGA AUTOMÁTICA POR FETCH
 // ============================================================
 async function cargarDatos() {
-  showOverlay(true, 'Cargando diccionarios...');
   try {
     const dictResp = await fetch(BASE_URL + 'diccionarios.json');
     if (!dictResp.ok) throw new Error('No se encontró diccionarios.json (HTTP ' + dictResp.status + ')');
@@ -213,7 +204,6 @@ async function cargarDatos() {
     DICT_POS = dictData._dictPositions;
     const years = dictData.years;
 
-    showOverlay(true, 'Cargando ' + years.length + ' archivos de datos...');
     const fetches = years.map(y =>
       fetch(BASE_URL + 'datos_' + y + '.json').then(r => {
         if (!r.ok) throw new Error('datos_' + y + '.json no encontrado');
@@ -222,7 +212,6 @@ async function cargarDatos() {
     );
     const allYears = await Promise.all(fetches);
 
-    showOverlay(true, 'Decodificando registros...');
     await new Promise(r => setTimeout(r, 30));
 
     RAW = [];
@@ -238,7 +227,7 @@ async function cargarDatos() {
         const anio = Math.floor(f / 10000);
         const mes = Math.floor((f % 10000) / 100);
         const dia = f % 100;
-        RAW.push({
+        const _obj={
           cuenta: DICTS.cuenta[r[0]] || '',
           fecha: new Date(anio, mes - 1, dia),
           anio, mes, dia,
@@ -264,21 +253,20 @@ async function cargarDatos() {
           tipoMot: DICTS.tipoMot[r[21]] || '',
           tipoComb: DICTS.tipoComb[r[22]] || '',
           tipoMant: DICTS.tipoMant[r[23]] || ''
-        });
+        };
+        _obj._ecoLc=_obj.eco.toLowerCase();
+        RAW.push(_obj);
       }
-      showOverlay(true, 'Decodificando... ' + RAW.length.toLocaleString() + ' registros');
     }
 
+    _curPeriodCache=null;
     console.log('Datos cargados:', RAW.length, 'registros');
     document.getElementById('upload-zone').style.display = 'none';
     document.getElementById('dashboard-content').style.display = 'block';
     buildFilters();
     populateFilters();
     renderActiveTab();
-    showOverlay(false);
-
-  } catch (err) {
-    showOverlay(false);
+    } catch (err) {
     console.error(err);
     // Fallback: mostrar upload manual
     document.getElementById('upload-zone').style.display = 'block';
@@ -292,17 +280,13 @@ async function cargarDatos() {
 // ============================================================
 document.getElementById('file-input').addEventListener('change',function(e){
   const file=e.target.files[0];if(!file)return;
-  showOverlay(true,'Leyendo archivo ('+Math.round(file.size/1048576)+' MB)...');
   const reader=new FileReader();
   reader.onload=function(ev){
     try{
-      showOverlay(true,'Parseando Excel...');
       setTimeout(()=>{
         const wb=XLSX.read(ev.target.result,{type:'array',cellDates:true});
         const ws=wb.Sheets[wb.SheetNames[0]];
-        showOverlay(true,'Extrayendo filas...');
         const raw=XLSX.utils.sheet_to_json(ws,{defval:''});
-        showOverlay(true,'Preprocesando '+raw.length.toLocaleString()+' registros...');
         setTimeout(()=>{
           preprocessData(raw);
           document.getElementById('upload-zone').style.display='none';
@@ -310,10 +294,9 @@ document.getElementById('file-input').addEventListener('change',function(e){
           buildFilters();
           populateFilters();
           renderActiveTab();
-          showOverlay(false);
-        },50);
+          },50);
       },50);
-    }catch(err){alert('Error: '+err.message);showOverlay(false);}
+    }catch(err){alert('Error: '+err.message);}
   };
   reader.readAsArrayBuffer(file);
 });
@@ -329,7 +312,7 @@ function preprocessData(raw){
     else if(typeof fecha==='number'){d=new Date((fecha-25569)*86400000);}
     else{d=new Date(fecha);}
     if(isNaN(d.getTime()))continue;
-    RAW.push({
+    const _rowObj={
       cuenta:String(r['Nombre Cta']||'').trim(),
       fecha:d,
       anio:d.getFullYear(),
@@ -359,7 +342,9 @@ function preprocessData(raw){
       tipoMot:String(r['TIPO MOTOR']||'').trim(),
       tipoComb:String(r['TIPO COMBUSTIBLE']||'').trim(),
       tipoMant:String(r['TIPO MANTENIMIENTO']||'').trim()
-    });
+    };
+    _rowObj._ecoLc=_rowObj.eco.toLowerCase();
+    RAW.push(_rowObj);
   }
   console.log('Preprocessed:',RAW.length,'rows');
 }
@@ -475,7 +460,7 @@ function populateFilters(){
         if(this.checked){if(!F[fm.key].includes(sv))F[fm.key].push(sv);}
         else{F[fm.key]=F[fm.key].filter(x=>x!==sv);}
         updateLabel('dd-'+fm.key,F[fm.key],fm);
-        renderActiveTab();
+        debouncedRender();
       });
       ct.appendChild(item);
     });
@@ -490,7 +475,7 @@ function filterDropdownItems(input){
   });
 }
 
-function handleEcoInput(v){F.eco=v.trim();renderActiveTab();}
+function handleEcoInput(v){F.eco=v.trim();debouncedRender();}
 function filterEcoList(q){
   q=q.toLowerCase();
   const items=document.querySelectorAll('#dd-eco-list .dropdown-item');
@@ -504,7 +489,8 @@ function updateLabel(id,sel,fm){
   else lb.textContent=sel.length+' sel.';
 }
 function toggleDD(id){
-  const ct=document.getElementById(id+'-content');
+  let ct=document.getElementById(id+'-content')||document.getElementById(id);
+  if(!ct)return;
   document.querySelectorAll('.dropdown-content.open').forEach(d=>{if(d!==ct)d.classList.remove('open');});
   ct.classList.toggle('open');
 }
@@ -519,26 +505,20 @@ function clearFilters(){
 
 function getFiltered(){
   const sets={};
-  // Populate eco dropdown list
-  const ecoVals=[...new Set(RAW.map(r=>r.eco).filter(v=>v&&v!=='0'&&v!==''))].sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}));
-  const ecoCt=document.getElementById('dd-eco-list');
-  if(ecoCt){
-    ecoCt.innerHTML='<div style="padding:4px 6px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:1;font-size:9px;color:#888">'+ecoVals.length+' unidades</div>';
-    ecoVals.forEach(v=>{
-      const item=document.createElement('div');item.className='dropdown-item';item.dataset.val=String(v).toLowerCase();
-      item.textContent=v;
-      item.style.cursor='pointer';
-      item.addEventListener('click',()=>{document.getElementById('eco-input').value=v;handleEcoInput(v);ecoCt.classList.remove('open');});
-      ecoCt.appendChild(item);
-    });
-  }
   FILTER_MAP.forEach(fm=>{if(F[fm.key].length)sets[fm.col]=new Set(F[fm.key].map(String));});
   const eco=F.eco.toLowerCase();
-  return RAW.filter(r=>{
-    for(const col in sets){if(!sets[col].has(String(r[col])))return false;}
-    if(eco&&!String(r.eco).toLowerCase().includes(eco))return false;
-    return true;
-  });
+  const cols=Object.keys(sets);
+  const nCols=cols.length;
+  // Tight loop — avoid per-row object creation
+  const out=[];
+  for(let i=0,len=RAW.length;i<len;i++){
+    const r=RAW[i];
+    let pass=true;
+    for(let j=0;j<nCols;j++){if(!sets[cols[j]].has(String(r[cols[j]]))){pass=false;break;}}
+    if(pass&&eco&&!r._ecoLc.includes(eco))pass=false;
+    if(pass)out.push(r);
+  }
+  return out;
 }
 
 // ============================================================
@@ -567,8 +547,15 @@ function renderActiveTab(){
 // ============================================================
 // UTILITIES
 // ============================================================
-function fmtP(v){if(v==null||isNaN(v))return'—';return'$'+Number(v).toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:0});}
-function fmtN(v){if(v==null||isNaN(v))return'—';return Number(v).toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:0});}
+let _renderTimer=0;
+function debouncedRender(){clearTimeout(_renderTimer);_renderTimer=setTimeout(renderActiveTab,80);}
+function _fmtNum(n){
+  const s=Math.round(Math.abs(n)).toString();
+  let r='';for(let i=s.length-1,c=0;i>=0;i--,c++){if(c&&c%3===0)r=','+r;r=s[i]+r;}
+  return n<0?'-'+r:r;
+}
+function fmtP(v){if(v==null||isNaN(v))return'—';return'$'+_fmtNum(v);}
+function fmtN(v){if(v==null||isNaN(v))return'—';return _fmtNum(v);}
 function fmtPct(v){if(v==null||isNaN(v)||!isFinite(v))return'—';return(v>0?'+':'')+v.toFixed(1)+'%';}
 function pctClass(v){if(v==null||isNaN(v)||!isFinite(v))return'';return v>0?'up':'down';}
 function toggleGroup(grpKey){
@@ -582,34 +569,39 @@ function toggleGroup(grpKey){
     if(firstTd){firstTd.textContent=firstTd.textContent.replace(visible?'▼':'▶',visible?'▶':'▼');}
   }
 }
-function showOverlay(show,txt){}
+
 function pivot(datos,rowKey,colKey,valKey){
   const map={},cols=new Set();
-  datos.forEach(r=>{
-    const rk=typeof rowKey==='function'?rowKey(r):r[rowKey];
-    const ck=typeof colKey==='function'?colKey(r):r[colKey];
+  const rkFn=typeof rowKey==='function'?rowKey:r=>r[rowKey];
+  const ckFn=typeof colKey==='function'?colKey:r=>r[colKey];
+  const vkFn=typeof valKey==='function'?valKey:r=>r[valKey];
+  for(let i=0,len=datos.length;i<len;i++){
+    const r=datos[i],rk=rkFn(r),ck=ckFn(r);
     cols.add(ck);
     if(!map[rk])map[rk]={};
-    map[rk][ck]=(map[rk][ck]||0)+(typeof valKey==='function'?valKey(r):r[valKey]);
-  });
+    map[rk][ck]=(map[rk][ck]||0)+vkFn(r);
+  }
   return{map,cols:[...cols].sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}))};
 }
-function makeTableHTML(id,title,headers,rows,opts={}){
-  let h=`<div class="tabla-wrap"><div class="tabla-toolbar"><span>${title}</span>
-    <button class="btn-dl" onclick="downloadTable('${id}')">⬇ DESCARGA EXCEL</button></div>
-    <div class="tabla-container"><table id="${id}"><thead><tr>${headers.map(h=>'<th>'+h+'</th>').join('')}</tr></thead><tbody>`;
-  rows.forEach(r=>{
-    const cls=r._cls||'';
-    h+='<tr class="'+cls+'">';
-    r.cells.forEach((c,i)=>{
-      const tdCls=i===0&&!r._cls?'label-col':'';
-      const style=c.style||'';
-      h+=`<td class="${tdCls} ${c.cls||''}" style="${style}">${c.v}</td>`;
-    });
-    h+='</tr>';
-  });
-  h+='</tbody></table></div></div>';
-  return h;
+function makeTableHTML(id,title,headers,rows){
+  const p=['<div class="tabla-wrap"><div class="tabla-toolbar"><span>',title,
+    '</span><button class="btn-dl" onclick="downloadTable(this.dataset.tid)" data-tid="',id,
+    '">⬇ DESCARGA EXCEL</button></div><div class="tabla-container"><table id="',id,
+    '"><thead><tr>'];
+  for(let i=0;i<headers.length;i++)p.push('<th>',headers[i],'</th>');
+  p.push('</tr></thead><tbody>');
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i],cls=r._cls||'';
+    p.push('<tr class="',cls,'">');
+    const cells=r.cells;
+    for(let j=0;j<cells.length;j++){
+      const c=cells[j];
+      p.push('<td class="',j===0&&!cls?'label-col ':'',(c.cls||''),'" style="',(c.style||''),'">',c.v,'</td>');
+    }
+    p.push('</tr>');
+  }
+  p.push('</tbody></table></div></div>');
+  return p.join('');
 }
 function downloadTable(id){
   const tbl=document.getElementById(id);if(!tbl)return;
@@ -618,10 +610,13 @@ function downloadTable(id){
   XLSX.utils.book_append_sheet(wb,ws,'Datos');
   XLSX.writeFile(wb,id+'.xlsx');
 }
+let _curPeriodCache=null;
 function getCurrentPeriod(){
+  if(_curPeriodCache)return _curPeriodCache;
   let maxA=0,maxM=0;
-  RAW.forEach(r=>{if(r.anio>maxA||(r.anio===maxA&&r.mes>maxM)){maxA=r.anio;maxM=r.mes;}});
-  return{anio:maxA,mes:maxM};
+  for(let i=0,len=RAW.length;i<len;i++){const r=RAW[i];if(r.anio>maxA||(r.anio===maxA&&r.mes>maxM)){maxA=r.anio;maxM=r.mes;}}
+  _curPeriodCache={anio:maxA,mes:maxM};
+  return _curPeriodCache;
 }
 function buildPivotTable(datos,rowField,id,title,rowLabel,filterYear,reverseRows){
   const yr=filterYear||getCurrentPeriod().anio;
@@ -1344,7 +1339,6 @@ function buildFleetTable(datos,groupField,detailField,id,title,gLabel,dLabel){
   rows.push({cells:totCells,_cls:'total-row'});
   return makeTableHTML(id,title,headers,rows);
 }
-
 
 function buildMotorTable(datos,id,title,yr){
   const mesesPresent=[...new Set(datos.map(r=>r.mes))].sort((a,b)=>a-b);
